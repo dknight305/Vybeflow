@@ -1,5 +1,5 @@
 flask==2.3.2
 requests==2.31.0
-gunicorn               <-- FIXED! (or gunicorn==20.1.0 if you want a specific version)
+gunicorn             
 pandas==2.0.3
 pip install Flask gunicorn
