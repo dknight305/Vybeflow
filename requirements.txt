@@ -1,8 +1,4 @@
 flask==2.3.2
 requests==2.31.0
-gunicorn             
-pandas==2.0.3
-# ... other requirements ...
-Flask
 gunicorn
-# ... more requirements ...
+pandas==2.0.3
