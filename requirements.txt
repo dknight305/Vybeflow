@@ -14,3 +14,4 @@ gunicorn
 Flask-Dance
 Flask-Limiter
 Flask-Mail
+Flask-wtf
