@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Your Site</title>
+    <!-- Link to your built Bootstrap CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='bundle.css') }}">
+</head>
+<body>
+    {% block content %}{% endblock %}
+    <!-- Link to your built Bootstrap JS -->
+    <script src="{{ url_for('static', filename='bundle.js') }}"></script>
+</body>
+</html>
