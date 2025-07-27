@@ -1,26 +1,30 @@
-from flask import Flask, render_template, redirect, url_for, request, session, flash, abort
-from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime, timedelta
+import base64
+import io
+import json
+import os
+import random
+from threading import Thread
+
+from flask import (Flask, CSRFProtect, Limiter, Message, Mail, render_template,
+                   redirect, request, session, url_for, abort, flash)
+from flask_dance.contrib.facebook import make_facebook_blueprint, facebook
+from flask_dance.contrib.google import make_google_blueprint, google
+from flask_limiter import Limiter
+from flask_mail import Mail, Message
+from flask_socketio import SocketIO, emit, join_room, leave_room
+from itsdangerous import URLSafeTimedSerializer
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import os
-from flask_dance.contrib.facebook import make_facebook_blueprint, facebook
-from flask_limiter import Limiter
-from datetime import datetime, timedelta
-from flask_mail import Mail, Message
-from itsdangerous import URLSafeTimedSerializer
-from flask_wtf.csrf import CSRFProtect
-import random
-from twilio.rest import Client
-from flask_wtf import FlaskForm
+
+import numpy as np
+import soundfile as sf
 from wtforms import StringField, PasswordField, BooleanField, SubmitField, FileField
 from wtforms.validators import DataRequired, Email, Length, EqualTo, Regexp
-class RegistrationForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=80)])
-    email = StringField('Email', validators=[DataRequired(), Email(), Length(max=120)])
-    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
-    confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
-    submit = SubmitField('Register')
-from flask_socketio import SocketIO, emit, join_room
+
+# If you use numpy and soundfile for voice modulation:
+#import numpy as np
+#import soundfile as sf
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -59,6 +63,14 @@ facebook_bp = make_facebook_blueprint(
 )
 app.register_blueprint(facebook_bp, url_prefix="/facebook_login")
 
+google_bp = make_google_blueprint(
+    client_id="YOUR_GOOGLE_CLIENT_ID",
+    client_secret="YOUR_GOOGLE_CLIENT_SECRET",
+    scope=["profile", "email"],
+    redirect_to="google_login"
+)
+app.register_blueprint(google_bp, url_prefix="/google_login")
+
 mail = Mail(app)
 s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 socketio = SocketIO(app)
@@ -79,7 +91,8 @@ class User(db.Model):
     phone_verified = db.Column(db.Boolean, default=False)
     failed_logins = db.Column(db.Integer, default=0)
     lockout_until = db.Column(db.DateTime, nullable=True)
-    theme = db.Column(db.String(50), default='light')  # New field for user theme preference
+    theme = db.Column(db.String(50), default='light')  # e.g., 'rap', 'gospel', etc.
+    custom_background = db.Column(db.String(255), nullable=True)  # Path or URL to custom background
     is_under_review = db.Column(db.Boolean, default=False)
     review_requested_at = db.Column(db.DateTime, nullable=True)
 
@@ -219,7 +232,9 @@ def contains_hate(text):
 def check_story_for_hate(story):
     if contains_hate(story.media_filename) or contains_hate(story.caption if hasattr(story, 'caption') else ''):
         story.warning_count += 1
-        if story.warning_count >= 3:
+        if story.warning_count == 3:
+            notify(story.user_id, "Warning 3/3: If you do this crap again your account is banned.")
+        if story.warning_count > 3:
             story.is_banned = True
             notify(story.user_id, "Your story was banned for repeated hate speech.")
         else:
@@ -231,6 +246,10 @@ def notify(user_id, message):
     db.session.add(n)
     db.session.commit()
 
+def is_username_allowed(username):
+    # Only block hate/illegal words, not general slang or cursing
+    return not contains_hate(username)
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     form = RegistrationForm()
@@ -238,6 +257,9 @@ def register():
         username = form.username.data
         email = form.email.data
         password = form.password.data
+        if not is_username_allowed(username):
+            flash('Username contains prohibited words.')
+            return redirect(url_for('register'))
         if User.query.filter_by(username=username).first():
             flash('Username already exists.')
             return redirect(url_for('register'))
@@ -286,13 +308,31 @@ def logout():
     flash('Logged out successfully.')
     return redirect(url_for('login'))
 
+def get_backgrounds_for_user(user):
+    # Example: Map user.theme or interests to background files
+    theme_backgrounds = {
+        'nature': ['nature1.jpg', 'nature2.mp4'],
+        'art': ['art1.jpg', 'art2.mp4'],
+        'sports': ['sports1.jpg', 'sports2.mp4'],
+        'gospel': ['gospel1.jpg', 'gospel2.mp4'],
+        'rap': ['rap1.jpg', 'rap2.mp4'],
+        'hip_hop': ['hiphop1.jpg', 'hiphop2.mp4'],
+        'gangsta': ['gangsta1.jpg', 'gangsta2.mp4'],
+        # Add more themes and files as needed
+        'default': ['default1.jpg', 'default2.mp4']
+    }
+    theme = getattr(user, 'theme', 'default')
+    return theme_backgrounds.get(theme, theme_backgrounds['default'])
+
 @app.route('/')
 @app.route('/feed')
 def feed():
     if 'user_id' not in session:
         return redirect(url_for('login'))
+    user = User.query.get(session['user_id'])
     posts = Post.query.order_by(Post.id.desc()).all()
-    return render_template('feed.html', posts=posts)
+    backgrounds = get_backgrounds_for_user(user)
+    return render_template('feed.html', posts=posts, backgrounds=backgrounds)
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'glb', 'gltf', 'obj'}
 
@@ -351,6 +391,13 @@ def customize_profile():
     ]
     if request.method == 'POST':
         user.theme = request.form.get('theme', user.theme)
+        # Handle custom background upload
+        if 'custom_background' in request.files:
+            file = request.files['custom_background']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                user.custom_background = filename
         db.session.commit()
         flash('Profile customized!')
         return redirect(url_for('profile', username=user.username))
@@ -388,6 +435,24 @@ def facebook_login():
         db.session.add(user)
         db.session.commit()
     session['user_id'] = user.id
+    return redirect(url_for("feed"))
+
+@app.route('/google')
+def google_login():
+    if not google.authorized:
+        return redirect(url_for("google.login"))
+    resp = google.get("/oauth2/v2/userinfo")
+    google_info = resp.json()
+    google_id = google_info["id"]
+    email = google_info["email"]
+    username = google_info.get("name", email.split("@")[0])
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        user = User(username=username, email=email, is_verified=True)
+        db.session.add(user)
+        db.session.commit()
+    session['user_id'] = user.id
+    flash('Logged in with Google!')
     return redirect(url_for("feed"))
 
 @app.route('/golive', methods=['GET', 'POST'])
@@ -655,33 +720,23 @@ def messages(username):
         scheduled_at = request.form.get('scheduled_at')
         if scheduled_at:
             msg.scheduled_at = datetime.strptime(scheduled_at, "%Y-%m-%dT%H:%M")
-            # Only show messages where scheduled_at is None or <= now
-        db.session.add(msg)
-        db.session.commit()
-        notify(recipient.id, f"New message from {session['user_id']}")
-        # Real-time notification placeholder (implement if using SocketIO or similar)
-        flash('Message sent!')
-        return redirect(url_for('messages', username=username))
-    # Fetch messages between users
-    msgs = Message.query.filter(
-        ((Message.sender_id == session['user_id']) & (Message.recipient_id == recipient.id)) |
-        ((Message.sender_id == recipient.id) & (Message.recipient_id == session['user_id']))
-    ).order_by(Message.timestamp.asc()).all()
-    # Mark as read and delete self-destructing messages
-    for m in msgs:
-        if m.recipient_id == session['user_id'] and not m.is_read:
-            m.is_read = True
-            if m.self_destruct:
-                db.session.delete(m)
-    db.session.commit()
-    return render_template('messages.html', recipient=recipient, messages=msgs)
+            db.session.add(msg)
+            db.session.commit()
+            flash('Message scheduled.')
+            return redirect(request.referrer)
+    messages = Message.query.filter(
+        (Message.sender_id == session['user_id']) | (Message.recipient_id == session['user_id'])
+    ).order_by(Message.timestamp.desc()).all()
+    return render_template('messages.html', recipient=recipient, messages=messages)
 
 @app.route('/edit_message/<int:msg_id>', methods=['POST'])
 def edit_message(msg_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     msg = Message.query.get_or_404(msg_id)
     if msg.sender_id != session['user_id']:
         abort(403)
-    msg.text = request.form['text']
+    msg.text = request.form.get('text')
     db.session.commit()
     flash('Message edited.')
     return redirect(request.referrer)
@@ -709,6 +764,8 @@ def upload_story():
             story = Story(user_id=session['user_id'], media_filename=filename, expires_at=expires_at)
             db.session.add(story)
             db.session.commit()
+            # Start async review for harmful content
+            Thread(target=async_review_story, args=(story.id,)).start()
             flash('Story uploaded!')
             return redirect(url_for('stories'))
     return render_template('upload_story.html')
@@ -842,3 +899,284 @@ def review_accounts():
             flash(f"User {user.username} banned.")
         return redirect(url_for('review_accounts'))
     return render_template('review_accounts.html', users=users)
+
+@socketio.on('highlight_comment')
+def handle_highlight_comment(data):
+    # Broadcast to all viewers in the live stream room
+    emit('display_highlight', data, room='live_stream_room')
+
+@socketio.on('create_poll')
+def handle_create_poll(data):
+    emit('show_poll', data, room='live_stream_room')
+
+class EmojiPack(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False)
+    creator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    description = db.Column(db.String(255))
+    is_public = db.Column(db.Boolean, default=True)
+    theme = db.Column(db.String(50), default='custom')  # e.g., 'gangsta', 'street', etc.
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Emoji(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('emoji_pack.id'), nullable=False)
+    filename = db.Column(db.String(120), nullable=False)  # static or animated file
+    is_animated = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+@app.route('/emoji_studio', methods=['GET', 'POST'])
+def emoji_studio():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        # Handle emoji/sticker upload (from drawing tool, image, or gif)
+        file = request.files['emoji']
+        pack_id = request.form.get('pack_id')
+        is_animated = file.filename.lower().endswith(('.gif', '.webp', '.mp4'))
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        emoji = Emoji(pack_id=pack_id, filename=filename, is_animated=is_animated)
+        db.session.add(emoji)
+        db.session.commit()
+        flash('Emoji/Sticker uploaded!')
+        return redirect(url_for('emoji_studio'))
+    packs = EmojiPack.query.filter_by(creator_id=session['user_id']).all()
+    return render_template('emoji_studio.html', packs=packs)
+
+@app.route('/emoji_studio/create_pack', methods=['POST'])
+def create_emoji_pack():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    name = request.form['name']
+    description = request.form.get('description', '')
+    theme = request.form.get('theme', 'custom')
+    pack = EmojiPack(name=name, creator_id=session['user_id'], description=description, theme=theme)
+    db.session.add(pack)
+    db.session.commit()
+    flash('Emoji pack created!')
+    return redirect(url_for('emoji_studio'))
+
+@app.route('/emoji_marketplace')
+def emoji_marketplace():
+    # Show all public packs, optionally filter by theme (e.g., 'gangsta')
+    theme = request.args.get('theme')
+    if theme:
+        packs = EmojiPack.query.filter_by(is_public=True, theme=theme).all()
+    else:
+        packs = EmojiPack.query.filter_by(is_public=True).all()
+    return render_template('emoji_marketplace.html', packs=packs)
+
+@app.route('/emoji_pack/<int:pack_id>')
+def emoji_pack(pack_id):
+    pack = EmojiPack.query.get_or_404(pack_id)
+    emojis = Emoji.query.filter_by(pack_id=pack_id).all()
+    return render_template('emoji_pack.html', pack=pack, emojis=emojis)
+
+# --- In-App Design Studio for Stickers/Emojis ---
+@app.route('/design_studio', methods=['GET', 'POST'])
+def design_studio():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        # Receive base64 PNG/SVG or animated GIF/WebP from frontend drawing tool
+        data_url = request.form['data_url']
+        is_animated = request.form.get('is_animated', 'false') == 'true'
+        filename = f"design_{datetime.utcnow().timestamp()}.{'gif' if is_animated else 'png'}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        import base64
+        header, encoded = data_url.split(",", 1)
+        with open(filepath, "wb") as f:
+            f.write(base64.b64decode(encoded))
+        # Save as Emoji or Sticker
+        emoji = Emoji(pack_id=None, filename=filename, is_animated=is_animated)
+        db.session.add(emoji)
+        db.session.commit()
+        flash('Your custom emoji/sticker was created!')
+        return redirect(url_for('design_studio'))
+    return render_template('design_studio.html')
+
+# --- Voice Modulators for Stories ---
+@app.route('/story/voice_mod', methods=['POST'])
+def story_voice_mod():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    file = request.files['voice']
+    effect = request.form.get('effect', 'none')
+    import soundfile as sf
+    import numpy as np
+    data, samplerate = sf.read(file)
+    if effect == 'deep':
+        data = np.interp(np.arange(0, len(data), 0.7), np.arange(0, len(data)), data)
+    elif effect == 'robotic':
+        data = data * np.sin(2 * np.pi * 15 * np.arange(len(data)) / samplerate)
+    elif effect == 'high':
+        data = np.interp(np.arange(0, len(data), 1.3), np.arange(0, len(data)), data)
+    output = io.BytesIO()
+    sf.write(output, data, samplerate, format='WAV')
+    output.seek(0)
+    # Save and return processed file
+    filename = f"story_voice_{datetime.utcnow().timestamp()}.wav"
+    with open(os.path.join(app.config['UPLOAD_FOLDER'], filename), "wb") as f:
+        f.write(output.read())
+    flash('Voice filter applied!')
+    return redirect(url_for('upload_story'))
+
+# --- Dynamic Music Visualizers for Stories ---
+# (Frontend: Use JS libraries like wavesurfer.js or custom WebGL for real-time visualizers)
+# Backend: Pass music file/URL to template, let frontend render visualizer
+
+# --- "Duet" or "Remix" Stories ---
+@app.route('/story/duet/<int:story_id>', methods=['GET', 'POST'])
+def duet_story(story_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    original_story = Story.query.get_or_404(story_id)
+    if request.method == 'POST':
+        file = request.files['duet_video']
+        filename = f"duet_{datetime.utcnow().timestamp()}_{secure_filename(file.filename)}"
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        # Save duet as a new Story, link to original
+        story = Story(user_id=session['user_id'], media_filename=filename, expires_at=datetime.utcnow() + timedelta(hours=24))
+        db.session.add(story)
+        db.session.commit()
+        flash('Duet/Remix Story posted!')
+        return redirect(url_for('stories'))
+    return render_template('duet_story.html', original_story=original_story)
+
+# --- Interactive Story Paths (Choose Your Own Adventure) ---
+@app.route('/story/branch/<int:story_id>', methods=['GET', 'POST'])
+def story_branch(story_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    story = Story.query.get_or_404(story_id)
+    if request.method == 'POST':
+        # Save poll/branch options
+        options = request.form.getlist('options')
+        # Store options in a new model or as JSON in Story
+        story.branch_options = json.dumps(options)
+        db.session.commit()
+        flash('Interactive story path created!')
+        return redirect(url_for('stories'))
+    return render_template('story_branch.html', story=story)
+
+@app.route('/group/<int:group_id>/story', methods=['GET', 'POST'])
+def group_story(group_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    group = Group.query.get_or_404(group_id)
+    if request.method == 'POST':
+        file = request.files['story']
+        filename = f"groupstory_{datetime.utcnow().timestamp()}_{secure_filename(file.filename)}"
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        story = Story(user_id=session['user_id'], media_filename=filename, expires_at=datetime.utcnow() + timedelta(hours=24))
+        db.session.add(story)
+        db.session.commit()
+        socketio.emit('group_story_update', {'group_id': group_id, 'story_id': story.id}, room=f'group_{group_id}')
+        flash('Added to group story!')
+        return redirect(url_for('group', group_id=group_id))
+    # Fix: Show all group stories, not just current user's
+    member_ids = [m.user_id for m in GroupMember.query.filter_by(group_id=group_id).all()]
+    stories = Story.query.filter(Story.user_id.in_(member_ids)).order_by(Story.created_at.desc()).all()
+    return render_template('group_story.html', group=group, stories=stories)
+
+@app.route('/story/screenshot/<int:story_id>', methods=['POST'])
+def story_screenshot(story_id):
+    if 'user_id' not in session:
+        return '', 204
+    story = Story.query.get_or_404(story_id)
+    notify(story.user_id, f"Someone took a screenshot of your story (ID: {story_id})")
+    return '', 204
+
+@app.route('/messenger/video_call/<username>')
+def messenger_video_call(username):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    callee = User.query.filter_by(username=username).first_or_404()
+    return render_template('messenger_video_call.html', callee=callee)
+
+@socketio.on('join_video_call')
+def join_video_call(data):
+    room = data['room']
+    join_room(room)
+    emit('user_joined', {'sid': request.sid}, room=room)
+
+@socketio.on('video_signal')
+def video_signal(data):
+    room = data['room']
+    emit('video_signal', data, room=room, include_self=False)
+
+@socketio.on('join_group_call')
+def join_group_call(data):
+    room = data['room']
+    join_room(room)
+    emit('group_user_joined', {'sid': request.sid}, room=room)
+
+@socketio.on('group_video_signal')
+def group_video_signal(data):
+    room = data['room']
+    emit('group_video_signal', data, room=room, include_self=False)
+
+@socketio.on('challenge_request')
+def handle_challenge_request(data):
+    # Broadcast to host of the live stream (you may want to use rooms for each live)
+    emit('challenge_request', {
+        'live_id': data['live_id'],
+        'user_id': session['user_id'],
+        'username': User.query.get(session['user_id']).username
+    }, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('challenge_accept')
+def handle_challenge_accept(data):
+    # Notify challenger and host to start battle (split-screen)
+    emit('start_battle', {'role': 'host'}, room=f'live_host_{data["live_id"]}')
+    emit('start_battle', {'role': 'challenger'}, room=f'user_{data["challenger_id"]}')
+
+@socketio.on('join_live')
+def join_live(data):
+    if data['role'] == 'host':
+        join_room(f'live_host_{data["live_id"]}')
+    elif data['role'] == 'challenger':
+        join_room(f'user_{session["user_id"]}')
+    else:
+        join_room(f'user_{session["user_id"]}')
+
+@socketio.on('battle_signal')
+def handle_battle_signal(data):
+    # Relay signaling between host and challenger in the live session
+    live_id = data['live_id']
+    # Broadcast to both host and challenger rooms
+    emit('battle_signal', data, room=f'live_host_{live_id}')
+    emit('battle_signal', data, room=f'user_{session["user_id"]}')
+
+# Soundboard UI
+@app.route('/soundboard')
+def soundboard():
+    return render_template('soundboard.html')
+
+# (Soundboard UI HTML/JS removed from Python file. Place it in your HTML template where needed.)
+
+@socketio.on('soundboard')
+def handle_soundboard(data):
+    # data: {'live_id': ..., 'effect': 'airhorn'}
+    emit('soundboard', data, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('ar_filter')
+def handle_ar_filter(data):
+    # data: {'live_id': ..., 'filter': 'shades'/'grill'/'hat'/'thuglife'}
+    emit('ar_filter', data, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('thuglife_effect')
+def handle_thuglife_effect(data):
+    # data: {'live_id': ...}
+    emit('thuglife_effect', data, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('live_bg')
+def handle_live_bg(data):
+    emit('live_bg', data, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('join_squad')
+def join_squad(data):
+    # data: {'live_id': ..., 'user_id': ...}
+    join_room(f'live_host_{data["live_id"]}')
+    emit('squad_joined', {'user_id': data['user_id']}, room=f'live_host_{data["live_id"]}')
