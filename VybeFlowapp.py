@@ -91,7 +91,8 @@ class User(db.Model):
     phone_verified = db.Column(db.Boolean, default=False)
     failed_logins = db.Column(db.Integer, default=0)
     lockout_until = db.Column(db.DateTime, nullable=True)
-    theme = db.Column(db.String(50), default='light')  # New field for user theme preference
+    theme = db.Column(db.String(50), default='light')  # e.g., 'rap', 'gospel', etc.
+    custom_background = db.Column(db.String(255), nullable=True)  # Path or URL to custom background
     is_under_review = db.Column(db.Boolean, default=False)
     review_requested_at = db.Column(db.DateTime, nullable=True)
 
@@ -390,6 +391,13 @@ def customize_profile():
     ]
     if request.method == 'POST':
         user.theme = request.form.get('theme', user.theme)
+        # Handle custom background upload
+        if 'custom_background' in request.files:
+            file = request.files['custom_background']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                user.custom_background = filename
         db.session.commit()
         flash('Profile customized!')
         return redirect(url_for('profile', username=user.username))
@@ -1109,47 +1117,66 @@ def group_video_signal(data):
     room = data['room']
     emit('group_video_signal', data, room=room, include_self=False)
 
-from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField
-from wtforms.validators import DataRequired, Length
+@socketio.on('challenge_request')
+def handle_challenge_request(data):
+    # Broadcast to host of the live stream (you may want to use rooms for each live)
+    emit('challenge_request', {
+        'live_id': data['live_id'],
+        'user_id': session['user_id'],
+        'username': User.query.get(session['user_id']).username
+    }, room=f'live_host_{data["live_id"]}')
 
-class RegistrationForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=80)])
-    email = StringField('Email', validators=[DataRequired(), Length(min=6, max=120)])
-    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
-    submit = SubmitField('Register')
+@socketio.on('challenge_accept')
+def handle_challenge_accept(data):
+    # Notify challenger and host to start battle (split-screen)
+    emit('start_battle', {'role': 'host'}, room=f'live_host_{data["live_id"]}')
+    emit('start_battle', {'role': 'challenger'}, room=f'user_{data["challenger_id"]}')
 
-# Move the modal HTML and JavaScript to your template files (e.g., base.html or messenger_video_call.html).
-# The Python file should only contain Python code.
-
-# Move the modal HTML and JavaScript to your template files (e.g., base.html or messenger_video_call.html).
-# The Python file should only contain Python code.
-
-def ai_moderate_text(text):
-    # Example: Use a simple ML model or external API for moderation
-    # Replace with real ML or API call
-    flagged = any(word in text.lower() for word in ['hate', 'spam', 'scam', 'explicit'])
-    return flagged
-
-@app.route('/moderate_post/<int:post_id>', methods=['POST'])
-def moderate_post(post_id):
-    post = Post.query.get_or_404(post_id)
-    if ai_moderate_text(post.caption):
-        post.is_reported = True
-        db.session.commit()
-        notify(post.user_id, "Your post was flagged by AI moderation.")
-        # Send email to moderators
-        msg = Message(
-            subject="Vybe Flow: Post Flagged for Review",
-            sender=app.config['MAIL_USERNAME'],
-            recipients=["chatcirclebusiness16@gmail.com"],  # <-- Moderator email here
-            body=f"Post ID {post.id} by user ID {post.user_id} was flagged for review.\n\nCaption: {post.caption}\n\nReview at: {url_for('admin_panel', _external=True)}"
-        )
-        mail.send(msg)
-        flash('Post flagged for review.')
+@socketio.on('join_live')
+def join_live(data):
+    if data['role'] == 'host':
+        join_room(f'live_host_{data["live_id"]}')
+    elif data['role'] == 'challenger':
+        join_room(f'user_{session["user_id"]}')
     else:
-        flash('Post passed moderation.')
-    return redirect(url_for('admin_panel'))
+        join_room(f'user_{session["user_id"]}')
 
-# (Move this HTML code to your admin.html template file.)
-# The Python file should only contain Python code.
+@socketio.on('battle_signal')
+def handle_battle_signal(data):
+    # Relay signaling between host and challenger in the live session
+    live_id = data['live_id']
+    # Broadcast to both host and challenger rooms
+    emit('battle_signal', data, room=f'live_host_{live_id}')
+    emit('battle_signal', data, room=f'user_{session["user_id"]}')
+
+# Soundboard UI
+@app.route('/soundboard')
+def soundboard():
+    return render_template('soundboard.html')
+
+# (Soundboard UI HTML/JS removed from Python file. Place it in your HTML template where needed.)
+
+@socketio.on('soundboard')
+def handle_soundboard(data):
+    # data: {'live_id': ..., 'effect': 'airhorn'}
+    emit('soundboard', data, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('ar_filter')
+def handle_ar_filter(data):
+    # data: {'live_id': ..., 'filter': 'shades'/'grill'/'hat'/'thuglife'}
+    emit('ar_filter', data, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('thuglife_effect')
+def handle_thuglife_effect(data):
+    # data: {'live_id': ...}
+    emit('thuglife_effect', data, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('live_bg')
+def handle_live_bg(data):
+    emit('live_bg', data, room=f'live_host_{data["live_id"]}')
+
+@socketio.on('join_squad')
+def join_squad(data):
+    # data: {'live_id': ..., 'user_id': ...}
+    join_room(f'live_host_{data["live_id"]}')
+    emit('squad_joined', {'user_id': data['user_id']}, room=f'live_host_{data["live_id"]}')
