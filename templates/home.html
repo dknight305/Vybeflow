@@ -1,182 +1,63 @@
 {% extends "base.html" %}
 {% block content %}
-{<div class="container">
-    <div class="row">
-        <div class="col-md-12">
-<link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet">
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+    <a class="navbar-brand" href="#">Vybeflow</a>
+    <form class="form-inline ml-auto">
+        <input class="form-control mr-sm-2" type="search" placeholder="Search" aria-label="Search">
+        <button class="btn btn-outline-light my-2 my-sm-0" type="submit">Search</button>
+    </form>
+</nav>
 <div class="container">
-   <div class="row">
-      <div class="col-md-12">
-         <div id="content" class="content content-full-width">
-            <!-- begin profile -->
-            <div class="profile">
-               <div class="profile-header">
-                  <!-- BEGIN profile-header-cover -->
-                  <div class="profile-header-cover"></div>
-                  <!-- END profile-header-cover -->
-                  <!-- BEGIN profile-header-content -->
-                  <div class="profile-header-content">
-                     <!-- BEGIN profile-header-img -->
-                     <div class="profile-header-img">
-                        <img src="https://bootdey.com/img/Content/avatar/avatar7.png" alt="">
-                     </div>
-                     <!-- END profile-header-img -->
-                     <!-- BEGIN profile-header-info -->
-                     <div class="profile-header-info">
-                        <h4 class="m-t-10 m-b-5">John Doe</h4>
-                        <p class="m-b-10">Web And Frontend Developer</p>
-                        <a href="#" class="btn btn-xs btn-success">Edit Profile</a>
-                     </div>
-                     <!-- END profile-header-info -->
-                  </div>
-                  <!-- END profile-header-content -->
-                  <!-- BEGIN profile-header-tab -->
-                  <ul class="profile-header-tab nav nav-tabs">
-                     <li class="nav-item"><a href="https://www.bootdey.com/snippets/view/bs4-profile-with-timeline-posts" target="__blank" class="nav-link_">POSTS</a></li>
-                     <li class="nav-item"><a href="https://www.bootdey.com/snippets/view/bs4-profile-about" target="__blank" class="nav-link_">ABOUT</a></li>
-                     <li class="nav-item"><a href="https://www.bootdey.com/snippets/view/profile-photos" target="__blank" class="nav-link_">PHOTOS</a></li>
-                     <li class="nav-item"><a href="https://www.bootdey.com/snippets/view/profile-videos" target="__blank" class="nav-link_">VIDEOS</a></li>
-                     <li class="nav-item"><a href="https://www.bootdey.com/snippets/view/bs4-profile-friend-list" target="__blank" class="nav-link_ active show">FRIENDS</a></li>
-                  </ul>
-                  <!-- END profile-header-tab -->
-               </div>
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card mb-3">
+                <div class="card-body text-center">
+                    <img src="https://via.placeholder.com/80" class="rounded-circle mb-2" alt="Profile">
+                    <h5 class="card-title">Your Name</h5>
+                    <p class="card-text">Bio or status here</p>
+                    <button class="btn btn-outline-primary btn-sm">Edit Profile</button>
+                </div>
             </div>
-            <!-- end profile -->
-            <!-- begin profile-content -->
-            <div class="profile-content">
-               <!-- begin tab-content -->
-               <div class="tab-content p-0">
-
-                  <!-- begin #profile-about tab -->
-                  <div class="tab-pane fade in active show" id="profile-about">
-                     <!-- begin table -->
-                     <div class="table-responsive">
-                        <table class="table table-profile">
-                           <thead>
-                              <tr>
-                                 <th></th>
-                                 <th>
-                                    <h4>Micheal    Meyer <small>Lorraine Stokes</small></h4>
-                                 </th>
-                              </tr>
-                           </thead>
-                           <tbody>
-                              <tr class="highlight">
-                                 <td class="field">Mood</td>
-                                 <td><a href="javascript:;">Add Mood Message</a></td>
-                              </tr>
-                              <tr class="divider">
-                                 <td colspan="2"></td>
-                              </tr>
-                              <tr>
-                                 <td class="field">Mobile</td>
-                                 <td><i class="fa fa-mobile fa-lg m-r-5"></i> +1-(847)- 367-8924 <a href="javascript:;" class="m-l-5">Edit</a></td>
-                              </tr>
-                              <tr>
-                                 <td class="field">Home</td>
-                                 <td><a href="javascript:;">Add Number</a></td>
-                              </tr>
-                              <tr>
-                                 <td class="field">Office</td>
-                                 <td><a href="javascript:;">Add Number</a></td>
-                              </tr>
-                              <tr class="divider">
-                                 <td colspan="2"></td>
-                              </tr>
-                              <tr class="highlight">
-                                 <td class="field">About Me</td>
-                                 <td><a href="javascript:;">Add Description</a></td>
-                              </tr>
-                              <tr class="divider">
-                                 <td colspan="2"></td>
-                              </tr>
-                              <tr>
-                                 <td class="field">Country/Region</td>
-                                 <td>
-                                    <select class="form-control input-inline input-xs" name="region">
-                                       <option value="US" selected="">United State</option>
-                                       <option value="AF">Afghanistan</option>
-                                       <option value="AL">Albania</option>
-                                       <option value="DZ">Algeria</option>
-                                       <option value="AS">American Samoa</option>
-                                       <option value="AD">Andorra</option>
-                                       <option value="AO">Angola</option>
-                                       <option value="AI">Anguilla</option>
-                                       <option value="AQ">Antarctica</option>
-                                       <option value="AG">Antigua and Barbuda</option>
-                                    </select>
-                                 </td>
-                              </tr>
-                              <tr>
-                                 <td class="field">City</td>
-                                 <td>Los Angeles</td>
-                              </tr>
-                              <tr>
-                                 <td class="field">State</td>
-                                 <td><a href="javascript:;">Add State</a></td>
-                              </tr>
-                              <tr>
-                                 <td class="field">Website</td>
-                                 <td><a href="javascript:;">Add Webpage</a></td>
-                              </tr>
-                              <tr>
-                                 <td class="field">Gender</td>
-                                 <td>
-                                    <select class="form-control input-inline input-xs" name="gender">
-                                       <option value="male">Male</option>
-                                       <option value="female">Female</option>
-                                    </select>
-                                 </td>
-                              </tr>
-                              <tr>
-                                 <td class="field">Birthdate</td>
-                                 <td>
-                                    <select class="form-control input-inline input-xs" name="day">
-                                       <option value="04" selected="">04</option>
-                                    </select>
-                                    -
-                                    <select class="form-control input-inline input-xs" name="month">
-                                       <option value="11" selected="">11</option>
-                                    </select>
-                                    -
-                                    <select class="form-control input-inline input-xs" name="year">
-                                       <option value="1989" selected="">1989</option>
-                                    </select>
-                                 </td>
-                              </tr>
-                              <tr>
-                                 <td class="field">Language</td>
-                                 <td>
-                                    <select class="form-control input-inline input-xs" name="language">
-                                       <option value="" selected="">English</option>
-                                    </select>
-                                 </td>
-                              </tr>
-                              <tr class="divider">
-                                 <td colspan="2"></td>
-                              </tr>
-                              <tr class="highlight">
-                                 <td class="field">&nbsp;</td>
-                                 <td class="p-t-10 p-b-10">
-                                    <button type="submit" class="btn btn-primary width-150">Update</button>
-                                    <button type="submit" class="btn btn-white btn-white-without-border width-150 m-l-5">Cancel</button>
-                                 </td>
-                              </tr>
-                           </tbody>
-                        </table>
-                     </div>
-                     <!-- end table -->
-                  </div>
-                  <!-- end #profile-about tab -->
-               </div>
-               <!-- end tab-content -->
+        </div>
+        <div class="col-md-6">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">What's on your mind?</h5>
+                    <textarea class="form-control mb-2" rows="2" placeholder="Share something..."></textarea>
+                    <button class="btn btn-primary">Post</button>
+                </div>
             </div>
-            <!-- end profile-content -->
-         </div>
-      </div>
-   </div>
-</div>
-    	</div>
-	</div>
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-2">
+                        <img src="https://via.placeholder.com/40" class="rounded-circle mr-2" alt="User">
+                        <strong>User Name</strong>
+                    </div>
+                    <p>This is a sample post, like Facebook's feed.</p>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary">Like</button>
+                        <button class="btn btn-sm btn-outline-secondary">Comment</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Friends</h5>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex align-items-center">
+                            <img src="https://via.placeholder.com/30" class="rounded-circle mr-2" alt="Friend 1">
+                            Friend 1
+                        </li>
+                        <li class="list-group-item d-flex align-items-center">
+                            <img src="https://via.placeholder.com/30" class="rounded-circle mr-2" alt="Friend 2">
+                            Friend 2
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
