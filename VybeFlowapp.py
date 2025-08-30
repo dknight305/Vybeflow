@@ -1,61 +1,501 @@
-from datetime import datetime, timedelta
-import base64
-import io
-import json
-import os
-import random
-from threading import Thread
+from flask import Flask
+app = Flask(__name__)
 
-from flask import Flask, render_template, redirect, request, session, url_for, abort, flash, jsonify
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy(app)
+
+# --- Advanced Livestream Features ---
+# Live Reaction (emoji, heart, etc.)
+class LiveReaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    emoji = db.Column(db.String(16), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Live Poll
+
+# --- Gangsta/Wild N Out Features ---
+# Battle Room model
+class BattleRoom(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    description = db.Column(db.String(255))
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+
+# Crew model
+class Crew(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    banner = db.Column(db.String(255), nullable=True)
+    avatar = db.Column(db.String(255), nullable=True)
+    description = db.Column(db.String(255))
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Live Q&A
+class LiveQuestion(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    question = db.Column(db.String(255), nullable=False)
+    is_highlighted = db.Column(db.Boolean, default=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Virtual Gift
+class VirtualGift(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    gift_type = db.Column(db.String(32), nullable=False)  # e.g., 'coin', 'sticker', 'rose'
+    amount = db.Column(db.Integer, default=1)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Achievement/Badge
+class Achievement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(64), nullable=False)
+    description = db.Column(db.String(255))
+    earned_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Co-Stream (multi-user live)
+class CoStream(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    user_ids = db.Column(db.Text, nullable=False)  # JSON list of user ids
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    ended_at = db.Column(db.DateTime, nullable=True)
+
+# Overlay (theme, AR, etc.)
+class StreamOverlay(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    overlay_type = db.Column(db.String(32), nullable=False)  # 'theme', 'ar', etc.
+    data = db.Column(db.Text, nullable=True)  # JSON or config
+
+# Music Integration
+class StreamMusic(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    track_url = db.Column(db.String(255), nullable=False)
+    added_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+# AR Filter
+class ARFilter(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), nullable=False)
+    file_url = db.Column(db.String(255), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    is_public = db.Column(db.Boolean, default=True)
+
+# VIP/Private Stream
+class VIPStreamAccess(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    purchased_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Highlight
+class StreamHighlight(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    start_time = db.Column(db.Float, nullable=False)
+    end_time = db.Column(db.Float, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Live Map (Discovery)
+class LiveLocation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    lat = db.Column(db.Float, nullable=False)
+    lng = db.Column(db.Float, nullable=False)
+    city = db.Column(db.String(64), nullable=True)
+    country = db.Column(db.String(64), nullable=True)
+
+# --- End Advanced Livestream Features ---
+# --- Livestream Feature Routes (stubs) ---
+@app.route('/live/<int:post_id>/reactions', methods=['POST'])
+def live_reaction(post_id):
+    # Add a reaction to a live stream
+    emoji = request.form.get('emoji')
+    if 'user_id' in session and emoji:
+        reaction = LiveReaction(post_id=post_id, user_id=session['user_id'], emoji=emoji)
+        db.session.add(reaction)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/poll', methods=['POST'])
+def live_poll(post_id):
+    # Create a poll for a live stream
+    question = request.form.get('question')
+    options = request.form.get('options')  # JSON list
+    if 'user_id' in session and question and options:
+        poll = LivePoll(post_id=post_id, question=question, options=options)
+        db.session.add(poll)
+        db.session.commit()
+        return jsonify({'status': 'ok', 'poll_id': poll.id})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/poll/<int:poll_id>/vote', methods=['POST'])
+def live_poll_vote(poll_id):
+    # Vote in a live poll
+    option = request.form.get('option')
+    if 'user_id' in session and option:
+        vote = LivePollVote(poll_id=poll_id, user_id=session['user_id'], option=option)
+        db.session.add(vote)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/question', methods=['POST'])
+def live_question(post_id):
+    # Submit a question for Q&A
+    question = request.form.get('question')
+    if 'user_id' in session and question:
+        q = LiveQuestion(post_id=post_id, user_id=session['user_id'], question=question)
+        db.session.add(q)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/gift', methods=['POST'])
+def live_gift(post_id):
+    # Send a virtual gift
+    gift_type = request.form.get('gift_type')
+    amount = int(request.form.get('amount', 1))
+    if 'user_id' in session and gift_type:
+        gift = VirtualGift(post_id=post_id, user_id=session['user_id'], gift_type=gift_type, amount=amount)
+        db.session.add(gift)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/highlight', methods=['POST'])
+def live_highlight(post_id):
+    # Create a highlight for a stream
+    start = float(request.form.get('start'))
+    end = float(request.form.get('end'))
+    if 'user_id' in session:
+        highlight = StreamHighlight(post_id=post_id, start_time=start, end_time=end, created_by=session['user_id'])
+        db.session.add(highlight)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/music', methods=['POST'])
+def live_music(post_id):
+    # Add a music track to the stream
+    track_url = request.form.get('track_url')
+    if 'user_id' in session and track_url:
+        music = StreamMusic(post_id=post_id, track_url=track_url, added_by=session['user_id'])
+        db.session.add(music)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/overlay', methods=['POST'])
+def live_overlay(post_id):
+    # Add or update overlay
+    overlay_type = request.form.get('overlay_type')
+    data = request.form.get('data')
+    if 'user_id' in session and overlay_type:
+        overlay = StreamOverlay(post_id=post_id, overlay_type=overlay_type, data=data)
+        db.session.add(overlay)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/arfilter', methods=['POST'])
+def live_arfilter(post_id):
+    # Add AR filter to stream
+    filter_id = request.form.get('filter_id')
+    if 'user_id' in session and filter_id:
+        # Just a stub, would link ARFilter to stream
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/vip', methods=['POST'])
+def live_vip(post_id):
+    # Grant VIP access
+    if 'user_id' in session:
+        access = VIPStreamAccess(post_id=post_id, user_id=session['user_id'])
+        db.session.add(access)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+
+@app.route('/live/<int:post_id>/location', methods=['POST'])
+def live_location(post_id):
+    # Set live location for discovery
+    lat = float(request.form.get('lat'))
+    lng = float(request.form.get('lng'))
+    city = request.form.get('city')
+    country = request.form.get('country')
+    if 'user_id' in session:
+        loc = LiveLocation(post_id=post_id, lat=lat, lng=lng, city=city, country=country)
+        db.session.add(loc)
+        db.session.commit()
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'}), 400
+# --- End Livestream Feature Routes ---
+import os
+import io
+import re
+import json
+import base64
+import random
+import requests
+
+from datetime import datetime, timedelta
+import random
+import os
+# --- Gangsta/Wild N Out Features ---
+# Battle Room model
+class BattleRoom(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    description = db.Column(db.String(255))
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+
+# Crew model
+class Crew(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    banner = db.Column(db.String(255), nullable=True)
+    avatar = db.Column(db.String(255), nullable=True)
+    description = db.Column(db.String(255))
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Crew Membership
+class CrewMember(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    crew_id = db.Column(db.Integer, db.ForeignKey('crew.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# Battle (Rap Battle, Roast, Freestyle)
+class Battle(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    room_id = db.Column(db.Integer, db.ForeignKey('battle_room.id'), nullable=False)
+    challenger_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    opponent_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    winner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    battle_type = db.Column(db.String(32), default='freestyle')  # 'freestyle', 'roast', 'wildstyle'
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    ended_at = db.Column(db.DateTime, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+
+# Battle Vote
+class BattleVote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    battle_id = db.Column(db.Integer, db.ForeignKey('battle.id'), nullable=False)
+    voter_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    voted_for_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    voted_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# --- End Gangsta/Wild N Out Features ---
+# Gangsta Profile Badge
+def get_gangsta_badge(user):
+    # Example: assign badge based on battles won
+    battles_won = Battle.query.filter_by(winner_id=user.id).count()
+    if battles_won >= 20:
+        return 'OG Legend'
+    elif battles_won >= 10:
+        return 'Wildstyle Champ'
+    elif battles_won >= 3:
+        return 'Battle Star'
+    return None
+# --- Gangsta/Wild N Out Routes ---
+@app.route('/battlerooms')
+def battlerooms():
+    rooms = BattleRoom.query.filter_by(is_active=True).all()
+    return render_template('battlerooms.html', rooms=rooms)
+
+@app.route('/battleroom/<int:room_id>')
+def battleroom(room_id):
+    room = BattleRoom.query.get_or_404(room_id)
+    battles = Battle.query.filter_by(room_id=room.id).order_by(Battle.started_at.desc()).all()
+    return render_template('battleroom.html', room=room, battles=battles)
+
+@app.route('/battle/<int:battle_id>', methods=['GET', 'POST'])
+def battle(battle_id):
+    battle = Battle.query.get_or_404(battle_id)
+    challenger = User.query.get(battle.challenger_id)
+    opponent = User.query.get(battle.opponent_id)
+    votes_challenger = BattleVote.query.filter_by(battle_id=battle.id, voted_for_id=challenger.id).count()
+    votes_opponent = BattleVote.query.filter_by(battle_id=battle.id, voted_for_id=opponent.id).count()
+    if request.method == 'POST' and 'user_id' in session:
+        voted_for = int(request.form['voted_for'])
+        if not BattleVote.query.filter_by(battle_id=battle.id, voter_id=session['user_id']).first():
+            vote = BattleVote(battle_id=battle.id, voter_id=session['user_id'], voted_for_id=voted_for)
+            db.session.add(vote)
+            db.session.commit()
+            flash('Vote submitted!')
+        return redirect(url_for('battle', battle_id=battle.id))
+    return render_template('battle.html', battle=battle, challenger=challenger, opponent=opponent, votes_challenger=votes_challenger, votes_opponent=votes_opponent)
+
+@app.route('/crews')
+def crews():
+    crews = Crew.query.all()
+    return render_template('crews.html', crews=crews)
+
+@app.route('/crew/<int:crew_id>')
+def crew(crew_id):
+    crew = Crew.query.get_or_404(crew_id)
+    members = CrewMember.query.filter_by(crew_id=crew.id).all()
+    return render_template('crew.html', crew=crew, members=members)
+
+@app.route('/leaderboard')
+def leaderboard():
+    # Top battlers and crews
+    top_battlers = db.session.query(User, db.func.count(Battle.id).label('wins')).join(Battle, Battle.winner_id == User.id).group_by(User.id).order_by(db.desc('wins')).limit(10).all()
+    top_crews = db.session.query(Crew, db.func.count(CrewMember.id).label('members')).join(CrewMember, CrewMember.crew_id == Crew.id).group_by(Crew.id).order_by(db.desc('members')).limit(10).all()
+    return render_template('leaderboard.html', top_battlers=top_battlers, top_crews=top_crews)
+
+# --- End Gangsta/Wild N Out Routes ---
+from threading import Thread
+from flask import Flask, render_template, redirect, request, session, url_for, abort, flash, jsonify, Blueprint, current_app
+from flask_cors import CORS
+from functools import wraps
 from flask_wtf import CSRFProtect
 from flask_limiter import Limiter
 from flask_mail import Mail, Message
+from flask_sqlalchemy import SQLAlchemy
 from flask_dance.contrib.facebook import make_facebook_blueprint, facebook
 from flask_dance.contrib.google import make_google_blueprint, google
-from flask_dance.contrib.instagram import make_instagram_blueprint, instagram
-from flask_dance.contrib.snapchat import make_snapchat_blueprint, snapchat
-from flask_limiter import Limiter
-from flask_mail import Mail, Message
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from itsdangerous import URLSafeTimedSerializer
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-
-import numpy as np
-import soundfile as sf
 from wtforms import StringField, PasswordField, BooleanField, SubmitField, FileField
 from wtforms.validators import DataRequired, Email, Length, EqualTo, Regexp
-from authlib.integrations.flask_client import OAuth
+from flask_wtf import FlaskForm
+import time
+try:
+    from pywebpush import webpush, WebPushException
+except ImportError:
+    webpush = None
+    WebPushException = Exception
+try:
+    import spacy
+except ImportError:
+    spacy = None
+try:
+    from authlib.integrations.flask_client import OAuth
+except ImportError:
+    OAuth = None
+import numpy as np
+import soundfile as sf
 
-# If you use numpy and soundfile for voice modulation:
-#import numpy as np
-#import soundfile as sf
+# Ensure login_required is defined before any use
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
+# Form classes - defined at module level before app initialization
+class RegistrationForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=8)])
+    password2 = PasswordField(
+        'Repeat Password', validators=[DataRequired(), EqualTo('password')])
+    submit = SubmitField('Sign Up')
+
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    remember_me = BooleanField('Remember Me')
+    submit = SubmitField('Sign In')
+
+
+
+# --- Privacy Policy and Terms of Service Routes ---
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
+
+@app.route('/terms')
+def terms():
+    return render_template('terms.html')
+
+# --- Account Deletion (GDPR/CCPA) ---
+@app.route('/account/delete', methods=['GET', 'POST'])
+def delete_account():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    user = User.query.get(session['user_id'])
+    if request.method == 'POST':
+        # Delete user and all related data
+        # (You may want to anonymize instead of hard delete in production)
+        db.session.delete(user)
+        db.session.commit()
+        session.pop('user_id', None)
+        flash('Your account and data have been deleted.')
+        return redirect(url_for('homepage'))
+    return render_template('delete_account.html', user=user)
+
+# --- Global Error Handlers ---
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    return render_template('500.html'), 500
+
+# --- Flask App Config: Security Hardening ---
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.urandom(24)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://user:password@host/dbname'
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['SECRET_KEY'] = os.environ.get('VYBEFLOW_SECRET_KEY', os.urandom(32))
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('VYBEFLOW_DB_URI', 'sqlite:///vybeflow.db')
+app.config['UPLOAD_FOLDER'] = os.environ.get('VYBEFLOW_UPLOAD_FOLDER', 'static/uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
-
 # Mail configuration
-app.config['MAIL_SERVER'] = 'smtp.example.com'
-app.config['MAIL_PORT'] = 587
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.example.com')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'your@email.com'
-app.config['MAIL_PASSWORD'] = 'yourpassword'
-
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME', 'vybeflow@gmail.com')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'vybeflow@gmail.com')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD', 'yourpassword')
 # Twilio configuration
-app.config['TWILIO_ACCOUNT_SID'] = 'your_account_sid'
-app.config['TWILIO_AUTH_TOKEN'] = 'your_auth_token'
-app.config['TWILIO_PHONE_NUMBER'] = '+1234567890'
-
+app.config['TWILIO_ACCOUNT_SID'] = os.environ.get('TWILIO_ACCOUNT_SID', 'your_account_sid')
+app.config['TWILIO_AUTH_TOKEN'] = os.environ.get('TWILIO_AUTH_TOKEN', 'your_auth_token')
+app.config['TWILIO_PHONE_NUMBER'] = os.environ.get('TWILIO_PHONE_NUMBER', '+1234567890')
 # Secure session cookies
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['REMEMBER_COOKIE_SECURE'] = True
-
-from datetime import timedelta
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2)
+# Force HTTPS (behind proxy/load balancer)
+app.config['PREFERRED_URL_SCHEME'] = 'https'
+
+# --- CSRF Protection ---
+csrf = CSRFProtect(app)
+
+# --- HTTP Security Headers ---
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://upload.wikimedia.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://upload.wikimedia.org;"
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
 
 db = SQLAlchemy(app)
 limiter = Limiter(app)
@@ -76,23 +516,20 @@ google_bp = make_google_blueprint(
 )
 app.register_blueprint(google_bp, url_prefix="/google_login")
 
-instagram_bp = make_instagram_blueprint(
-    client_id="YOUR_INSTAGRAM_CLIENT_ID",
-    client_secret="YOUR_INSTAGRAM_CLIENT_SECRET",
-    redirect_to="instagram_callback"
-)
-app.register_blueprint(instagram_bp, url_prefix="/instagram_login")
-
-snapchat_bp = make_snapchat_blueprint(
-    client_id="YOUR_SNAPCHAT_CLIENT_ID",
-    client_secret="YOUR_SNAPCHAT_CLIENT_SECRET",
-    redirect_to="snapchat_callback"
-)
-app.register_blueprint(snapchat_bp, url_prefix="/snapchat_login")
-
 mail = Mail(app)
 s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
-socketio = SocketIO(app)
+# socketio = SocketIO(app)  # Temporarily disabled
+# --- Secure config from environment variables ---
+
+# Missing function definitions
+def async_review_story(story_id):
+    """Async function to review story content"""
+    pass
+
+# Missing VAPID key (for push notifications)
+VAPID_PRIVATE_KEY = "your-vapid-private-key-here"
+
+from authlib.integrations.flask_client import OAuth
 
 oauth = OAuth(app)
 tiktok = oauth.register(
@@ -128,19 +565,35 @@ class User(db.Model):
     push_subscription = db.Column(db.Text, nullable=True)  # For storing push notification subscriptions
     facebook_handle = db.Column(db.String(120), nullable=True)
     instagram_handle = db.Column(db.String(120), nullable=True)
+    instagram_access_token = db.Column(db.String(255), nullable=True)
+    instagram_user_id = db.Column(db.String(120), nullable=True)
     tiktok_handle = db.Column(db.String(120), nullable=True)
     snapchat_handle = db.Column(db.String(120), nullable=True)
     custom_theme_video = db.Column(db.String(120), nullable=True)  # New field for custom theme video
 
+    # Profile Anthem (VybeCheck)
+    profile_anthem_url = db.Column(db.String(255), nullable=True)  # URL to music track
+    profile_anthem_genre = db.Column(db.String(50), nullable=True, default='hip_hop')
+
+    # Custom Layouts (JSON config for profile blocks)
+    custom_layout = db.Column(db.Text, nullable=True)  # JSON string for layout config
+
+# Post model (moved from stray fields)
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     media_filename = db.Column(db.String(120))
     media_type = db.Column(db.String(10), nullable=False)  # 'image', 'video', or 'live'
     caption = db.Column(db.String(255))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     live_url = db.Column(db.String(255))  # New field for live stream URLs
     is_reported = db.Column(db.Boolean, default=False)  # New field to track reported posts
     is_private = db.Column(db.Boolean, default=False)  # New field for private posts
+    # Define relationship with User
+    user = db.relationship('User', backref=db.backref('posts', lazy=True))
+
+    # Content warning tags
+    content_tag = db.Column(db.String(32), nullable=True)  # 'artistic', 'educational', 'unfiltered', or None
 
 class Like(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -152,6 +605,8 @@ class Comment(db.Model):
     text = db.Column(db.String(255), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)  # For replies
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
 
 class Follow(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -174,6 +629,7 @@ class Ban(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     expires_at = db.Column(db.DateTime, nullable=True)  # None means permanent
+    reason = db.Column(db.String(255), nullable=True)  # Add this line
 
 class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -199,6 +655,13 @@ class MessageReaction(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     emoji = db.Column(db.String(10), nullable=False)
 
+class CommentReaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    comment_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    emoji = db.Column(db.String(50), nullable=True)  # e.g., "😂", "🤣", or a 3D emoji name
+    gif_url = db.Column(db.String(255), nullable=True)  # URL to a GIF if used
+
 class Story(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -213,6 +676,115 @@ class Group(db.Model):
     name = db.Column(db.String(80), unique=True, nullable=False)
     description = db.Column(db.String(255))
     theme = db.Column(db.String(50), default='light')  # Add this line
+    is_art_nudity = db.Column(db.Boolean, default=False)  # True for Art & Nudity groups
+    age_restricted = db.Column(db.Boolean, default=False)  # Age restriction flag
+    custom_rules = db.Column(db.Text, nullable=True)  # Community moderation rules
+# Private Collection model
+class PrivateCollection(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    description = db.Column(db.String(255))
+    password_hash = db.Column(db.String(128), nullable=True)  # If set, collection is password-protected
+    is_nudity = db.Column(db.Boolean, default=False)  # True if for nudity/art
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Relationship: user = db.relationship('User', backref=db.backref('private_collections', lazy=True))
+
+# Private Collection Item model
+class PrivateCollectionItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    collection_id = db.Column(db.Integer, db.ForeignKey('private_collection.id'), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    caption = db.Column(db.String(255), nullable=True)
+    is_nudity = db.Column(db.Boolean, default=False)
+# Route to create an Art & Nudity group
+@app.route('/groups/create_art_nudity', methods=['GET', 'POST'])
+def create_art_nudity_group():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        name = request.form['name']
+        description = request.form.get('description', '')
+        custom_rules = request.form.get('custom_rules', '')
+        group = Group(
+            name=name,
+            description=description,
+            theme='art_nudity',
+            is_art_nudity=True,
+            age_restricted=True,
+            custom_rules=custom_rules
+        )
+        db.session.add(group)
+        db.session.commit()
+        flash('Art & Nudity group created!')
+        return redirect(url_for('group', group_id=group.id))
+    return render_template('create_art_nudity_group.html')
+
+# Route to create a private collection
+@app.route('/collections/create', methods=['GET', 'POST'])
+def create_private_collection():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        name = request.form['name']
+        description = request.form.get('description', '')
+        password = request.form.get('password')
+        is_nudity = bool(request.form.get('is_nudity'))
+        password_hash = generate_password_hash(password) if password else None
+        collection = PrivateCollection(
+            user_id=session['user_id'],
+            name=name,
+            description=description,
+            password_hash=password_hash,
+            is_nudity=is_nudity
+        )
+        db.session.add(collection)
+        db.session.commit()
+        flash('Private collection created!')
+        return redirect(url_for('view_private_collection', collection_id=collection.id))
+    return render_template('create_private_collection.html')
+
+# Route to view a private collection (with password check if needed)
+@app.route('/collections/<int:collection_id>', methods=['GET', 'POST'])
+def view_private_collection(collection_id):
+    collection = PrivateCollection.query.get_or_404(collection_id)
+    # Check permission: owner or password
+    if collection.password_hash:
+        if 'collection_access' not in session or session['collection_access'] != collection_id:
+            if request.method == 'POST':
+                password = request.form.get('password')
+                if password and check_password_hash(collection.password_hash, password):
+                    session['collection_access'] = collection_id
+                else:
+                    flash('Incorrect password.')
+                    return render_template('private_collection_password.html', collection=collection)
+            else:
+                return render_template('private_collection_password.html', collection=collection)
+    items = PrivateCollectionItem.query.filter_by(collection_id=collection.id).all()
+    return render_template('private_collection.html', collection=collection, items=items)
+
+# Route to upload to a private collection
+@app.route('/collections/<int:collection_id>/upload', methods=['POST'])
+def upload_to_private_collection(collection_id):
+    collection = PrivateCollection.query.get_or_404(collection_id)
+    if collection.user_id != session.get('user_id'):
+        abort(403)
+    file = request.files['file']
+    caption = request.form.get('caption')
+    is_nudity = bool(request.form.get('is_nudity'))
+    filename = secure_filename(file.filename)
+    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    item = PrivateCollectionItem(
+        collection_id=collection.id,
+        filename=filename,
+        caption=caption,
+        is_nudity=is_nudity
+    )
+    db.session.add(item)
+    db.session.commit()
+    flash('File uploaded to collection!')
+    return redirect(url_for('view_private_collection', collection_id=collection.id))
 
 class GroupMember(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -256,7 +828,7 @@ class GroupChatMessage(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     text = db.Column(db.String(1000))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    reply_to_id = db.Column(db.Integer, db.ForeignKey('groupchatmessage.id'), nullable=True)  # For threaded replies
+    reply_to_id = db.Column(db.Integer, db.ForeignKey('group_chat_message.id'), nullable=True)  # For threaded replies
     is_announcement = db.Column(db.Boolean, default=False)  # For admin announcements
     is_pinned = db.Column(db.Boolean, default=False)        # For pinning messages
 
@@ -286,9 +858,25 @@ def is_username_allowed(username):
     # Only block hate/illegal words, not general slang or cursing
     return not contains_hate(username)
 
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    form = RegistrationForm()
+    try:
+        form = RegistrationForm()
+    except NameError as e:
+        flash(f'Form initialization error: {e}. Please refresh the page.')
+        # Create a dummy form to prevent template errors
+        class DummyForm:
+            def validate_on_submit(self):
+                return False
+            def __init__(self):
+                self.username = type('obj', (object,), {'data': ''})()
+                self.email = type('obj', (object,), {'data': ''})()
+                self.password = type('obj', (object,), {'data': ''})()
+                self.password2 = type('obj', (object,), {'data': ''})()
+        form = DummyForm()
+        return render_template('register.html', form=form, show_instagram_signup=True)
+    
     if form.validate_on_submit():
         username = form.username.data
         email = form.email.data
@@ -308,18 +896,78 @@ def register():
         db.session.commit()
         flash('Registration successful. Please log in.')
         return redirect(url_for('login'))
-    return render_template('register.html', form=form)
+    return render_template('register.html', form=form, show_instagram_signup=True)
+
+# Instagram OAuth sign-up initiation route
+@app.route('/instagram_signup')
+def instagram_signup():
+    # This should redirect to the Instagram OAuth flow
+    # Placeholder: flash and redirect for now
+    flash('Instagram sign up coming soon!')
+    return redirect(url_for('register'))
+
+@app.route('/register_phone', methods=['GET', 'POST'])
+def register_phone():
+    """Phone registration route"""
+    if request.method == 'POST':
+        username = request.form.get('username')
+        phone = request.form.get('phone')
+        password = request.form.get('password')
+        
+        if not username or not phone or not password:
+            flash('All fields are required.')
+            return redirect(url_for('register_phone'))
+            
+        if not is_username_allowed(username):
+            flash('Username contains prohibited words.')
+            return redirect(url_for('register_phone'))
+            
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists.')
+            return redirect(url_for('register_phone'))
+            
+        if User.query.filter_by(phone=phone).first():
+            flash('Phone number already registered.')
+            return redirect(url_for('register_phone'))
+            
+        password_hash = generate_password_hash(password)
+        user = User(
+            username=username, 
+            password_hash=password_hash, 
+            phone=phone,
+            email=f"{username}@vybeflow.temp"  # Temporary email for phone-only registration
+        )
+        db.session.add(user)
+        db.session.commit()
+        flash('Phone registration successful. Please log in.')
+        return redirect(url_for('login'))
+        
+    return render_template('register_phone.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")
 def login():
-    form = RegistrationForm()  # Replace with LoginForm() if you have a separate login form
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+    try:
+        form = LoginForm()
+    except NameError as e:
+        flash(f'Form initialization error: {e}. Please refresh the page.')
+        # Create a dummy form to prevent template errors
+        class DummyForm:
+            def validate_on_submit(self):
+                return False
+            def __init__(self):
+                self.username = type('obj', (object,), {'data': ''})()
+                self.password = type('obj', (object,), {'data': ''})()
+        form = DummyForm()
+        return render_template('login.html', form=form)
+    
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
             session['user_id'] = user.id
+            session.permanent = True
             return redirect(url_for('feed'))
         if user and user.lockout_until and user.lockout_until > datetime.utcnow():
             flash('Account locked. Try again later.')
@@ -336,6 +984,7 @@ def login():
             user.failed_logins = 0
             user.lockout_until = None
             db.session.commit()
+        flash('Invalid credentials.')
     return render_template('login.html', form=form)
 
 @app.route('/logout')
@@ -361,15 +1010,76 @@ def get_backgrounds_for_user(user):
     return theme_backgrounds.get(theme, theme_backgrounds['default'])
 
 @app.route('/')
+def homepage():
+    """Landing page for new visitors"""
+    if 'user_id' in session:
+        return redirect(url_for('feed'))
+    return render_template('homepage.html')
+
 @app.route('/feed')
+@login_required
 def feed():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+    """Main social feed with posts from followed users"""
     user = User.query.get(session['user_id'])
-    posts = Post.query.order_by(Post.id.desc()).all()
+    
+    # Get posts from followed users and own posts
+    followed_users = db.session.query(Follow.followed_id).filter_by(follower_id=user.id).subquery()
+    posts = Post.query.join(User).filter(
+        (Post.user_id.in_(followed_users)) | (Post.user_id == user.id)
+    ).order_by(Post.timestamp.desc()).limit(50).all()
+    
+    # If no posts from followed users, show recent public posts
+    if not posts:
+        posts = Post.query.join(User).order_by(Post.timestamp.desc()).limit(20).all()
+    
+    # Get suggested users to follow
+    suggested_users = User.query.filter(
+        User.id != user.id,
+        ~User.id.in_(db.session.query(Follow.followed_id).filter_by(follower_id=user.id))
+    ).limit(5).all()
+    
     backgrounds = get_backgrounds_for_user(user)
     trending_users = get_trending_users()
-    return render_template('feed.html', posts=posts, backgrounds=backgrounds, trending_users=trending_users)
+    return render_template('feed.html', posts=posts, backgrounds=backgrounds, trending_users=trending_users, 
+                         suggested_users=suggested_users, current_user=user)
+
+@app.route('/follow/<int:user_id>', methods=['POST'])
+@login_required
+def follow_user(user_id):
+    """Follow a user"""
+    current_user_id = session['user_id']
+    
+    # Check if already following
+    existing_follow = Follow.query.filter_by(
+        follower_id=current_user_id, 
+        followed_id=user_id
+    ).first()
+    
+    if not existing_follow and current_user_id != user_id:
+        follow = Follow(follower_id=current_user_id, followed_id=user_id)
+        db.session.add(follow)
+        db.session.commit()
+        flash('User followed successfully!')
+    
+    return redirect(request.referrer or url_for('feed'))
+
+@app.route('/unfollow/<int:user_id>', methods=['POST'])
+@login_required
+def unfollow_user(user_id):
+    """Unfollow a user"""
+    current_user_id = session['user_id']
+    
+    follow = Follow.query.filter_by(
+        follower_id=current_user_id, 
+        followed_id=user_id
+    ).first()
+    
+    if follow:
+        db.session.delete(follow)
+        db.session.commit()
+        flash('User unfollowed successfully!')
+    
+    return redirect(request.referrer or url_for('feed'))
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp4', 'glb', 'gltf', 'obj'}
 
@@ -404,18 +1114,35 @@ def upload():
             media_type = 'video'
         else:
             media_type = 'image'
-        post = Post(media_filename=filename, media_type=media_type, caption=caption, user_id=session['user_id'])
-        db.session.add(post)
-        db.session.commit()
-        flash('Post uploaded successfully.')
-        return redirect(url_for('feed'))
+    # Content tag
+    content_tag = request.form.get('content_tag')  # 'artistic', 'educational', 'unfiltered', or None
+    post = Post(media_filename=filename, media_type=media_type, caption=caption, user_id=session['user_id'], content_tag=content_tag)
+    db.session.add(post)
+    db.session.commit()
+    flash('Post uploaded successfully.')
+    return redirect(url_for('feed'))
     return render_template('upload.html')
 
 @app.route('/profile/<username>')
 def profile(username):
     user = User.query.filter_by(username=username).first_or_404()
     posts = Post.query.filter_by(user_id=user.id).order_by(Post.id.desc()).all()
-    return render_template('profile.html', user=user, posts=posts)
+    anthem_url = user.profile_anthem_url
+    anthem_genre = user.profile_anthem_genre or 'hip_hop'
+    custom_bg = user.custom_background
+    custom_layout = user.custom_layout
+    # If visitor is a hip hop lover, blast anthem
+    visitor_theme = session.get('theme', None)
+    blast_anthem = anthem_url if anthem_url and (visitor_theme == 'hip_hop' or anthem_genre == 'hip_hop') else None
+    return render_template(
+        'profile.html',
+        user=user,
+        posts=posts,
+        anthem_url=anthem_url,
+        blast_anthem=blast_anthem,
+        custom_bg=custom_bg,
+        custom_layout=custom_layout
+    )
 
 @app.route('/profile/customize', methods=['GET', 'POST'])
 def customize_profile():
@@ -428,6 +1155,13 @@ def customize_profile():
     ]
     if request.method == 'POST':
         user.theme = request.form.get('theme', user.theme)
+        # Profile anthem
+        user.profile_anthem_url = request.form.get('profile_anthem_url')
+        user.profile_anthem_genre = request.form.get('profile_anthem_genre', 'hip_hop')
+        # Custom layout (as JSON string)
+        layout_json = request.form.get('custom_layout')
+        if layout_json:
+            user.custom_layout = layout_json
         # Handle custom background upload
         if 'custom_background' in request.files:
             file = request.files['custom_background']
@@ -448,16 +1182,55 @@ def like(post_id):
     if not like:
         db.session.add(Like(user_id=session['user_id'], post_id=post_id))
         db.session.commit()
+        flash('Post liked!')
+    else:
+        flash('You already liked this post!')
     return redirect(request.referrer)
+
+@app.route('/like_post/<int:post_id>', methods=['POST'])
+def like_post(post_id):
+    """Alternative route name for like functionality"""
+    return like(post_id)
 
 @app.route('/comment/<int:post_id>', methods=['POST'])
 def comment(post_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
     text = request.form['text']
-    db.session.add(Comment(text=text, user_id=session['user_id'], post_id=post_id))
+    parent_id = request.form.get('parent_id')
+    comment = Comment(text=text, user_id=session['user_id'], post_id=post_id, parent_id=parent_id)
+    db.session.add(comment)
     db.session.commit()
+    check_comment_for_harassment(comment)  # <-- Add this line
     return redirect(request.referrer)
+
+# Add a set of harassment/threat keywords (customize as needed)
+HARASSMENT_KEYWORDS = {'harass', 'threat', 'kill', 'hurt', 'attack', 'abuse', 'bully'}
+
+def contains_harassment(text):
+    return any(word in text.lower() for word in HARASSMENT_KEYWORDS)
+
+def check_comment_for_harassment(comment):
+    user = User.query.get(comment.user_id)
+    if contains_harassment(comment.text):
+        if not hasattr(user, 'harassment_warning_count'):
+            user.harassment_warning_count = 0
+        user.harassment_warning_count += 1
+        db.session.commit()
+        if user.harassment_warning_count >= 3:
+            # Ban the user after 3 warnings
+            ban = Ban.query.filter_by(user_id=user.id).first()
+            if not ban:
+                ban = Ban(user_id=user.id, expires_at=None, reason="Harassment or threats after 3 warnings.")
+                db.session.add(ban)
+            else:
+                ban.reason = "Harassment or threats after 3 warnings."
+                ban.expires_at = None
+            db.session.commit()
+            notify(user.id, "your outta here!")
+        else:
+            notify(user.id, f"Warning {user.harassment_warning_count}/3: Harassment or threat detected. After 3 warnings, you will be banned.")
+        db.session.commit()
 
 @app.route('/facebook')
 def facebook_login():
@@ -479,29 +1252,51 @@ def google_login():
     if not google.authorized:
         return redirect(url_for("google.login"))
     resp = google.get("/oauth2/v2/userinfo")
+    if not resp.ok:
+        flash('Google authentication failed. Please try again.')
+        return redirect(url_for('login'))
+    
     google_info = resp.json()
     google_id = google_info["id"]
     email = google_info["email"]
     username = google_info.get("name", email.split("@")[0])
+    
+    # Check if user already exists
     user = User.query.filter_by(email=email).first()
     if not user:
-        user = User(username=username, email=email, is_verified=True)
+        # Create new user with Google account - no password needed
+        # Ensure username is unique
+        base_username = username.replace(" ", "").lower()
+        counter = 1
+        unique_username = base_username
+        while User.query.filter_by(username=unique_username).first():
+            unique_username = f"{base_username}{counter}"
+            counter += 1
+        
+        # Create user with temporary password (Google OAuth user)
+        temp_password_hash = generate_password_hash(f"google_oauth_{google_id}_{random.randint(1000, 9999)}")
+        user = User(
+            username=unique_username, 
+            email=email, 
+            password_hash=temp_password_hash,
+            is_verified=True,
+            bio=f"New VybeFlow member! 🎉"
+        )
         db.session.add(user)
         db.session.commit()
+        
+        flash(f'Welcome to VybeFlow, {user.username}! Your account has been created successfully.')
+    else:
+        flash(f'Welcome back, {user.username}!')
+    
     session['user_id'] = user.id
-    flash('Logged in with Google!')
+    session.permanent = True
     return redirect(url_for("feed"))
 
 @app.route('/instagram_callback')
 def instagram_callback():
-    if not instagram.authorized:
-        return redirect(url_for("instagram.login"))
-    resp = instagram.get("/me?fields=id,username,account_type,media_count")
-    info = resp.json()
-    user = User.query.get(session['user_id'])
-    user.instagram_handle = info.get("username")
-    db.session.commit()
-    flash("Instagram linked!")
+    # Instagram integration placeholder - requires proper OAuth setup
+    flash("Instagram linking feature coming soon!")
     return redirect(url_for('account'))
 
 @app.route('/tiktok_login')
@@ -518,22 +1313,6 @@ def tiktok_callback():
     user.tiktok_handle = info['data']['user']['display_name']
     db.session.commit()
     flash("TikTok linked!")
-    return redirect(url_for('account'))
-
-@app.route('/snapchat_login')
-def snapchat_login():
-    redirect_uri = url_for('snapchat_callback', _external=True)
-    return snapchat.authorize_redirect(redirect_uri)
-
-@app.route('/snapchat_callback')
-def snapchat_callback():
-    token = snapchat.authorize_access_token()
-    resp = snapchat.get('me', token=token)
-    info = resp.json()
-    user = User.query.get(session['user_id'])
-    user.snapchat_handle = info['data']['me']['displayName']
-    db.session.commit()
-    flash("Snapchat linked!")
     return redirect(url_for('account'))
 
 @app.route('/golive', methods=['GET', 'POST'])
@@ -572,6 +1351,92 @@ def account():
         flash('Profile updated.')
         return redirect(url_for('account'))
     return render_template('account.html', user=user)
+
+@app.route('/search')
+@login_required
+def search():
+    """Search for users and content"""
+    query = request.args.get('q', '')
+    if not query:
+        return render_template('search.html', users=[], posts=[], query='')
+    
+    # Search users
+    users = User.query.filter(
+        User.username.contains(query) | 
+        User.bio.contains(query)
+    ).limit(20).all()
+    
+    # Search posts
+    posts = Post.query.filter(
+        Post.caption.contains(query)
+    ).limit(20).all()
+    
+    return render_template('search.html', users=users, posts=posts, query=query)
+
+@app.route('/messages')
+@login_required
+def messages():
+    """Direct messages inbox"""
+    user = User.query.get(session['user_id'])
+    # Get conversations where user is involved
+    conversations = db.session.query(Message).filter(
+        (Message.sender_id == user.id) | (Message.recipient_id == user.id)
+    ).order_by(Message.timestamp.desc()).all()
+    
+    # Group by conversation partner
+    grouped_conversations = {}
+    for msg in conversations:
+        partner_id = msg.recipient_id if msg.sender_id == user.id else msg.sender_id
+        if partner_id not in grouped_conversations:
+            partner = User.query.get(partner_id)
+            grouped_conversations[partner_id] = {
+                'partner': partner,
+                'last_message': msg,
+                'unread_count': 0
+            }
+    
+    return render_template('messages.html', conversations=grouped_conversations.values())
+
+@app.route('/messages/<int:user_id>')
+@login_required
+def chat(user_id):
+    """Chat with specific user"""
+    current_user = User.query.get(session['user_id'])
+    chat_partner = User.query.get_or_404(user_id)
+    
+    # Get conversation history
+    messages = Message.query.filter(
+        ((Message.sender_id == current_user.id) & (Message.recipient_id == user_id)) |
+        ((Message.sender_id == user_id) & (Message.recipient_id == current_user.id))
+    ).order_by(Message.timestamp.asc()).all()
+    
+    return render_template('chat.html', messages=messages, partner=chat_partner)
+
+@app.route('/send_message', methods=['POST'])
+@login_required
+def send_message():
+    """Send a direct message"""
+    content = request.form.get('content')
+    recipient_id = request.form.get('recipient_id')
+    
+    if content and recipient_id:
+        message = Message(
+            sender_id=session['user_id'],
+            recipient_id=recipient_id,
+            text=content,
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(message)
+        db.session.commit()
+        
+        # Real-time update via SocketIO (temporarily disabled)
+        # socketio.emit('new_message', {
+        #     'sender_id': session['user_id'],
+        #     'content': content,
+        #     'timestamp': message.timestamp.isoformat()
+        # }, room=f'user_{recipient_id}')
+    
+    return redirect(url_for('chat', user_id=recipient_id))
 
 @app.route('/admin')
 def admin_panel():
@@ -791,9 +1656,6 @@ def unban_user(user_id):
         flash('User unbanned.')
     return redirect(url_for('admin_panel'))
 
-@app.route('/banned')
-def banned():
-    return render_template('banned.html')
 
 @app.route('/notifications')
 def notifications():
@@ -989,14 +1851,22 @@ def cookie():
 #     });
 # }
 # </script>
-
 from flask import request, jsonify
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/api/save_push_subscription', methods=['POST'])
 @login_required
 def save_push_subscription():
     sub = request.get_json()
-    # Save sub to DB, associated with current_user.id
-    current_user.push_subscription = json.dumps(sub)
+    user = User.query.get(session['user_id'])
+    user.push_subscription = json.dumps(sub)
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -1212,5 +2082,135 @@ def create_story():
     flash('Story posted!')
     return redirect(url_for('story_view', story_id=story.id))
 
-# (HTML/JS for story_view.html removed from Python file. Place it in your story_view.html template.)
+@app.route('/appeal_ban', methods=['POST'])
+@login_required
+def appeal_ban():
+    user = User.query.get(session['user_id'])
+    if hasattr(user, 'is_banned') and user.is_banned:
+        reason = request.form.get('appeal_reason', '')
+        if 'Appeal' in globals():
+            appeal = Appeal(user_id=user.id, reason=reason)
+            db.session.add(appeal)
+            db.session.commit()
+        try:
+            msg = Message(
+                subject='Ban Appeal',
+                sender=app.config['MAIL_USERNAME'],
+                recipients=[app.config['MAIL_USERNAME']],
+                body=f"User {user.username} (ID: {user.id}) appealed their ban:\n\n{reason}"
+            )
+            mail.send(msg)
+        except Exception as e:
+            print("Mail send failed:", e)
+        flash('Your appeal has been submitted. Our team will review it soon.')
+    return redirect(url_for('banned'))
+
+@app.route('/banned')
+@login_required
+def banned():
+    ban = Ban.query.filter_by(user_id=session['user_id']).first()
+    reason = ban.reason if ban and ban.reason else "No reason specified."
+    return render_template('banned.html', reason=reason)
+
+@app.route('/react_comment/<int:comment_id>', methods=['POST'])
+def react_comment(comment_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Login required'}), 401
+    emoji = request.form.get('emoji')
+    gif_url = request.form.get('gif_url')
+    reaction = CommentReaction(
+        comment_id=comment_id,
+        user_id=session['user_id'],
+        emoji=emoji,
+        gif_url=gif_url
+    )
+    db.session.add(reaction)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+class Appeal(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    reason = db.Column(db.String(1000), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class StoryComment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    story_id = db.Column(db.Integer, db.ForeignKey('story.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    text = db.Column(db.String(255), nullable=True)
+    gif_url = db.Column(db.String(255), nullable=True)
+    music_url = db.Column(db.String(255), nullable=True)  # e.g., YouTube/Spotify link
+
+@app.route('/story/<int:story_id>/comment', methods=['POST'])
+@login_required
+def comment_on_story(story_id):
+    text = request.form.get('text')
+    gif_url = request.form.get('gif_url')
+    music_url = request.form.get('music_url')
+    comment = StoryComment(
+        story_id=story_id,
+        user_id=session['user_id'],
+        text=text,
+        gif_url=gif_url,
+        music_url=music_url
+    )
+    db.session.add(comment)
+    db.session.commit()
+    return redirect(url_for('story_view', story_id=story_id))
+
+import requests
+
+def get_instagram_friends(access_token, instagram_user_id):
+    """
+    Fetches followers for a business/creator Instagram account.
+    """
+    url = f"https://graph.instagram.com/{instagram_user_id}/followers"
+    params = {
+        "access_token": access_token,
+        "fields": "username,id"
+    }
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        return data.get('data', [])
+    else:
+        print("Instagram API error:", response.text)
+        return []
+
+@app.route('/import_instagram_friends')
+@login_required
+def import_instagram_friends():
+    user = User.query.get(session['user_id'])
+    # You must have stored these during OAuth
+    access_token = user.instagram_access_token
+    instagram_user_id = user.instagram_user_id
+    if not access_token or not instagram_user_id:
+        flash("Instagram account not linked or missing permissions.")
+        return redirect(url_for('account'))
+    friends = get_instagram_friends(access_token, instagram_user_id)
+    # Optionally, match these usernames to Vybe Flow users and auto-follow them
+    for friend in friends:
+        friend_user = User.query.filter_by(instagram_handle=friend['username']).first()
+        if friend_user and not Follow.query.filter_by(follower_id=user.id, followed_id=friend_user.id).first():
+            db.session.add(Follow(follower_id=user.id, followed_id=friend_user.id))
+    db.session.commit()
+    flash(f"Imported {len(friends)} Instagram friends!")
+    return redirect(url_for('account'))
+
+
+if __name__ == '__main__':
+    try:
+        print("Starting VybeFlow application...")
+        with app.app_context():
+            print("Creating database tables...")
+            db.create_all()
+            print("Database tables created successfully!")
+        print("Starting Flask server on http://0.0.0.0:5000")
+        app.run(debug=True, host='0.0.0.0', port=5000)
+    except Exception as e:
+        print(f"Error starting VybeFlow: {e}")
+        import traceback
+        traceback.print_exc()
+
 
