@@ -21,9 +21,9 @@ app.config.update(
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     
     # Session security
-    SESSION_COOKIE_SECURE=False,  # Set to True if using HTTPS
+    SESSION_COOKIE_SECURE=True,  # Set to True for HTTPS
     SESSION_COOKIE_HTTPONLY=True,
-    REMEMBER_COOKIE_SECURE=False,  # Set to True if using HTTPS
+    REMEMBER_COOKIE_SECURE=True,  # Set to True for HTTPS
     
     # File uploads
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max upload
@@ -50,4 +50,24 @@ with app.app_context():
     db.create_all()
 
 if __name__ == "__main__":
-    app.run()
+    # Production: do not use debug mode
+    app.run(host="0.0.0.0", port=8000, debug=False)
+
+# For Gunicorn: run with
+#   gunicorn -w 4 -b 0.0.0.0:8000 wsgi:app
+#
+# For Nginx reverse proxy, use a config like:
+#
+# server {
+#     listen 443 ssl;
+#     server_name yourdomain.com;
+#     ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+#     location / {
+#         proxy_pass http://127.0.0.1:8000;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+# }
