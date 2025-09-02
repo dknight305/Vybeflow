@@ -39,7 +39,7 @@ class LoginForm(FlaskForm):
 
 # Routes
 @app.route('/')
-def homepage():
+def home():
     return '''
     <h1 style="color: #ffb400; text-align: center; font-family: Arial;">🎵 VybeFlow - Minimal Test 🎵</h1>
     <div style="text-align: center; margin: 50px;">
@@ -149,7 +149,11 @@ def dashboard():
 def logout():
     session.pop('user_id', None)
     flash('Logged out successfully.')
-    return redirect(url_for('homepage'))
+    return redirect(url_for('home'))
+
+@app.route('/profile')
+def profile():
+    return render_template('profile.html')
 
 if __name__ == '__main__':
     with app.app_context():
