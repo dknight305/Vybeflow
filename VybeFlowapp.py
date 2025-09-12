@@ -1,5 +1,11 @@
-from flask import Flask, render_template, redirect, url_for, request, session, flash
 import os
+from flask import Flask, render_template, redirect, url_for, request, session, flash
+from flask_sqlalchemy import SQLAlchemy
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///vybeflow.db'
+db = SQLAlchemy(app)
 import datetime
 
 # A simple placeholder user object for demonstration purposes
@@ -9,10 +15,7 @@ class User:
         self.bio = bio
         self.avatar_url = avatar_url
 
-app = Flask(__name__)
 # Change this to a secure, randomly generated key in a production environment
-app.secret_key = os.urandom(24)
-
 @app.before_request
 def check_user_status():
     """

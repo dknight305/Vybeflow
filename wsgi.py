@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 from VybeFlowapp import app
+from VybeFlowapp import db
 
 # Production configuration
 app.config.update(
